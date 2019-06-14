@@ -7,26 +7,171 @@ output:
     keep_md: yes
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r global_options, include=FALSE}
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, tidy=TRUE)
+
 ```
 
-## R Markdown
+## Overview
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+The following steps have been taken to complete the project:
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+1. Loading the Packages
+2. Data Loading and Cleaning
+3. Exploratory Data Analysis
+4. Training Models
+5. Prediction Model Selection
+6. Prediction on New Dataset
 
-```{r cars}
-summary(cars)
+## 1. Loading the Packages
+
+For analyzing the given dataset for this project, the following R packages are needed to load prior running the analysis.
+
+```{r}
+
+library(lattice)
+library(ggplot2)
+library(caret)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+
 ```
 
-## Including Plots
+## 2. Data Loading and Cleaning
 
-You can also embed plots, for example:
+## i. Data Loading
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+Load the training and test data set after downloading the datasets from the course content and then split the training dataset further into training and test datasets.
+
+
+```{r DataLoading}
+
+setwd("D:/Learning/Coursera/Practical Machine Learning/Week 4/practicalmachinelearning/")
+trainURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainingDS <- read.csv(url(trainURL))
+testDS <- read.csv(url(testURL))
+
+label <- createDataPartition(trainingDS$classe, p = 0.7, list = FALSE)
+train <- trainingDS[label, ]
+test <- trainingDS[-label, ]
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## ii. Data Cleaning
+
+Before proceed further, data cleaning is necessary. In the training dataset, some variables contain a lot of NA, some have nearly zero variance and some are used for identification. Need to remove these type of variables from final features.
+
+```{r DataCleaning}
+
+label <- apply(train, 2, function(x) mean(is.na(x))) > 0.95
+train <- train[, -which(label, label == FALSE)]
+test <- test[, -which(label, label == FALSE)]
+NZV <- nearZeroVar(train)
+train <- train[ ,-NZV]
+test <- test[ ,-NZV]
+train <- train[ , -(1:5)]
+test <- test[ , -(1:5)]
+
+```
+
+Finally, 54 variables are remaining out of 160 variables after data cleaning.
+
+## 3. Exploratory Data Analysis
+
+After cleaning the dataset, the correlation of the variables are as below:
+
+```{r CorrelationPlot, fig.width=15, fig.height=10}
+
+corr <- cor(train[,-54])
+corrplot(corr, method = "color", type = "lower", tl.cex = 0.8, tl.col = rgb(0,0,0))
+
+```
+
+Darker gradient in the above plot shows higher correlation. As number of correlations are few, Princal Component Analysis is not needed here.
+
+## 4. Training Models
+
+Now different machine learning mothods will be implemented to model the training set and model with best accuracy will be chosen to predict the outcome in the testing dataset. The methods are Decision Tree, Random Forest, Generalized Boosted Model and Naive Bayes.
+
+To help to visualize better, a confusion matrix will be plotted at the end of each model.
+
+### a. Random Forest (RM)
+
+```{r RandomForest, message = FALSE}
+
+set.seed(1833)
+control <- trainControl(method = "cv", number = 3, verboseIter=FALSE)
+modelRF <- train(classe ~ ., data = train, method = "rf", trControl = control)
+
+predictRF <- predict(modelRF, test)
+confMatRF <- confusionMatrix(predictRF, test$classe)
+accRF <- confusionMatrix(predictRF, test$classe)$overall['Accuracy']
+confMatRF
+
+```
+
+### b. Generalized Boosted Model (GBM)
+
+```{r GBM, message = FALSE}
+
+set.seed(1847)
+control <- trainControl(method = "repeatedcv", number = 5, repeats = 1, verboseIter = FALSE)
+modelGBM <- train(classe ~ ., data = train, trControl = control, method = "gbm", verbose = FALSE)
+modelGBM$finalModel
+
+predictGBM <- predict(modelGBM, test)
+confMatGBM <- confusionMatrix(predictGBM, test$classe)
+accGBM <- confusionMatrix(predictGBM, test$classe)$overall['Accuracy']
+confMatGBM
+
+```
+
+### c. Decision Tree (DT)
+
+```{r DecisionTree, message = FALSE, warning = FALSE, fig.width=20, fig.height=12}
+
+set.seed(1671)
+modelDT <- rpart(classe ~ ., data = train, method = "class")
+fancyRpartPlot(modelDT)
+
+predictDT <- predict(modelDT, test, type = "class")
+confMatDT <- confusionMatrix(predictDT, test$classe)
+accDT <- confusionMatrix(predictDT, test$classe)$overall['Accuracy']
+confMatDT
+
+```
+
+### d. Naive Bayes (NB)
+
+```{r NB, message = FALSE}
+
+set.seed(1819)
+control <- trainControl(method = "repeatedcv", number = 4, repeats = 1, verboseIter = FALSE)
+modelNB <- train(classe ~ ., data = train, trControl = control, method = "nb", verbose = FALSE)
+
+predictNB <- predict(modelNB, test)
+confMatNB <- confusionMatrix(predictNB, test$classe)
+accNB <- confusionMatrix(predictNB, test$classe)$overall['Accuracy']
+confMatNB
+
+```
+
+## 5. Prediction Model Selection
+
+Random forest is the best performing model, followed by Generalized Boosted Model.
+
+## 6. Prediction on New Dataset
+
+Now, Random Forest model will be used for final prediction of the given test dataset.
+
+```{r TestSetPrediction, messages = FALSE}
+
+predictRF <- predict(modelRF, testDS)
+predictRF
+
+```
